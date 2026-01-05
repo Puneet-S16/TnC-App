@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import Hero from './components/Hero';
 import Analyzer from './components/Analyzer';
+import Background3D from './components/Background3D';
 
 function App() {
   const [showAnalyzer, setShowAnalyzer] = useState(false);
 
   return (
-    <div className="App">
-      <nav className="container" style={{ padding: '20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="App" style={{ color: '#F9FAFB', minHeight: '100vh', position: 'relative' }}>
+      <Background3D />
+      <nav className="container" style={{ padding: '20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 10 }}>
         <div style={{ fontWeight: '800', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>🚩</span> RedFlag Detector
         </div>

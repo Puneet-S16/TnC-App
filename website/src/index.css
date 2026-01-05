@@ -1,28 +1,26 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --primary: #4F46E5;
-  --primary-hover: #4338CA;
-  --bg-gradient-start: #EEF2FF;
-  --bg-gradient-end: #FFFFFF;
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --text-main: #111827;
-  --text-muted: #6B7280;
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --text-main: #F9FAFB;
+  --text-muted: #9CA3AF;
 
-  --grade-a: #059669;
-  --grade-b: #84CC16;
-  --grade-c: #F59E0B;
-  --grade-d: #F97316;
-  --grade-e: #DC2626;
+  --grade-a: #34D399;
+  --grade-b: #A3E635;
+  --grade-c: #FBBF24;
+  --grade-d: #FB923C;
+  --grade-e: #F87171;
 }
 
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
-  background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
   min-height: 100vh;
   color: var(--text-main);
+  background-color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }
 

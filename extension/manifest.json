@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "T&C Red Flag Detector",
+  "version": "1.0",
+  "description": "Scans Terms & Conditions for potential red flags. Not legal advice.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

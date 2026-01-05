@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T&C Red Flag Detector</title>
+  <link rel="stylesheet" href="popup.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+  <div class="container">
+    <header>
+      <h1>🚩 Red Flag Detector</h1>
+      <p class="subtitle">Understand risks in seconds.</p>
+    </header>
+
+    <div class="main-actions">
+      <button id="analyze-btn" class="primary-btn">Analyze This Page</button>
+      <div class="divider"><span>OR</span></div>
+      <textarea id="manual-text" placeholder="Paste Terms & Conditions text here..."></textarea>
+      <button id="analyze-manual-btn" class="secondary-btn">Analyze Pasted Text</button>
+    </div>
+
+    <!-- Results Section (Hidden by default) -->
+    <div id="results-view" class="hidden">
+      <div class="grade-container" id="grade-container">
+        <span class="grade-label">Privacy Grade</span>
+        <div class="grade-badge" id="grade-badge">?</div>
+        <span class="grade-subtitle" id="grade-desc">Analyzing...</span>
+      </div>
+
+      <div id="flags-list" class="flags-list">
+        <!-- Flags injected here -->
+      </div>
+
+      <button id="reset-btn" class="text-btn">Start Over</button>
+    </div>
+
+    <footer>
+      <p>⚠️ This tool highlights potential risk signals. It does not replace legal review.</p>
+    </footer>
+  </div>
+
+  <script src="rules.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Rules Logic Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        .pass {
+            color: green;
+        }
+
+        .fail {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Logic Verification</h1>
+    <div id="results">Running tests...</div>
+
+    <script src="rules.js"></script>
+    <script>
+        const tests = [
+            {
+                text: "This subscription will automatically renew every month.",
+                shouldMatch: ['auto_renewal']
+            },
+            {
+                text: "We reserve the right to change prices at any time.",
+                shouldMatch: ['price_change']
+            },
+            {
+                text: "We may share your data with third party partners for marketing.",
+                shouldMatch: ['data_sharing']
+            },
+            {
+                text: "All sales are final. No refunds.",
+                shouldMatch: ['no_refund']
+            },
+            {
+                text: "Cancellation requires written notice 30 days prior.",
+                shouldMatch: ['cancellation']
+            },
+            {
+                text: "We disclaim all warranties and limit liability to the maximum extent permitted.",
+                shouldMatch: ['liability']
+            },
+            {
+                text: "Any dispute shall be resolved by binding arbitration. You waive use of jury trial.",
+                shouldMatch: ['arbitration']
+            },
+            {
+                text: "This is a safe text with no red flags.",
+                shouldMatch: []
+            }
+        ];
+
+        const resultsDiv = document.getElementById('results');
+        let html = '';
+        let passed = 0;
+
+        tests.forEach((test, index) => {
+            const result = window.RedFlagLogic.analyzeText(test.text);
+            const detectedIds = result.flags.map(f => f.id);
+
+            // Check if all expected flags are present
+            const missing = test.shouldMatch.filter(id => !detectedIds.includes(id));
+            const unexpected = detectedIds.filter(id => !test.shouldMatch.includes(id));
+
+            const isPass = missing.length === 0 && unexpected.length === 0;
+            if (isPass) passed++;
+
+            html += `<div>Test ${index + 1}: ${isPass ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>'} <br>`;
+            html += `Input: "${test.text}"<br>`;
+            html += `Expected: [${test.shouldMatch.join(', ')}] <br>`;
+            html += `Got: [${detectedIds.join(', ')}] <br>`;
+            html += `Result Risk: ${result.riskLevel}`;
+            html += `<hr></div>`;
+        });
+
+        html += `<h2>Total: ${passed}/${tests.length} Passed</h2>`;
+        resultsDiv.innerHTML = html;
+    </script>
+</body>
+
+</html>

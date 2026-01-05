@@ -19,7 +19,7 @@ export default function Hero({ onStart }) {
                 <button onClick={onStart} className="btn-primary" style={{ fontSize: '1.1rem', padding: '16px 32px' }}>
                     Analyze Text Now
                 </button>
-                <button className="btn-secondary" style={{ fontSize: '1.1rem', padding: '16px 32px' }} onClick={() => window.open('https://chrome.google.com', '_blank')}>
+                <button className="btn-secondary" style={{ fontSize: '1.1rem', padding: '16px 32px' }} onClick={() => window.location.href = './extension.zip'}>
                     Get Chrome Extension
                 </button>
             </div>

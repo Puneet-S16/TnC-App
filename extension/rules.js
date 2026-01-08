@@ -96,18 +96,19 @@ const SCORING_RULES = {
   ]
 };
 
-// Big Platforms that often have vague policies (Bias)
+// Constraint #3 & 5: Big Platform Bias
 const BIG_PLATFORMS = ['facebook.com', 'instagram.com', 'google.com', 'youtube.com', 'amazon', 'twitter.com', 'x.com', 'linkedin.com', 'medium.com'];
 
 function analyzeText(text, domain = '') {
-  if (!text || typeof text !== 'string') {
+  // Constraint #1 checks
+  if (!text || typeof text !== 'string' || text.length < 50) {
     return {
       flags: [],
       grade: 'E',
       riskLevel: 'UNKNOWN',
       classification: 'Unclear',
-      classificationLabel: 'No Text Provided',
-      explanation: 'Please enter text to analyze.'
+      classificationLabel: 'Input too short',
+      explanation: 'Please provide more text for analysis.'
     };
   }
 
@@ -159,13 +160,14 @@ function analyzeText(text, domain = '') {
 
   // Vague Guardrail
   const hasExplicitSafety = safetyScore < 0;
+
+  // Constraint #4 enforcement
   if (vagueScore < 1.5 && !hasExplicitSafety) {
     if (vagueScore > 0) {
       explanations.push(`(Ignored ${vagueScore} vague points - below threshold)`);
     }
     vagueScore = 0;
   } else {
-    // Apply Vague Score
     vagueMatches.forEach(vm => {
       explanations.push(`Vague signal (+${vm.rule.score}): "${vm.match}"`);
       detectedFlags.push({
@@ -182,7 +184,6 @@ function analyzeText(text, domain = '') {
   let complexityPenalty = 0;
 
   // "No Evidence of Safety Penalty"
-  // If no explicit safety signals found AND document length > 150 words -> +1
   if (safetyScore === 0 && wordCount > 150) {
     complexityPenalty += 1;
     explanations.push(`Uncertainty Penalty (+1): No safety signals found.`);
@@ -211,20 +212,29 @@ function analyzeText(text, domain = '') {
   let classificationLabel = '';
   let grade = '';
 
-  // Thresholds:
-  if (totalScore >= 3) {
+  // Count High Severity Flags
+  const explicitRiskCount = detectedFlags.filter(f => f.severity === 'HIGH').length;
+
+  // Constraint #2: Do not assign worst grade (D/E) unless at least TWO explicit risk signals are present.
+  if (totalScore >= 3 && explicitRiskCount >= 2) {
     classification = 'EXPLICIT_RISK';
     classificationLabel = 'Explicit Risk';
     grade = 'D';
     if (totalScore >= 5) grade = 'E';
   }
+  // Constraint #3: Treat Grade C as default for large platforms / high scores without risks
   else if (totalScore >= 1) {
     classification = 'VAGUE';
     classificationLabel = 'Vague / Unclear';
     grade = 'C';
+
+    if (totalScore >= 3) {
+      explanations.push(`(Note: Score is high (${totalScore}), but grade capped at C because < 2 explicit risks were found)`);
+    }
   }
   else {
     // Score <= 0 -> Grade A ONLY IF explicit safety exists
+    // Constraint #4
     if (hasExplicitSafety && totalScore <= 0) {
       classification = 'SAFE';
       classificationLabel = 'Explicitly Safe';
@@ -242,7 +252,13 @@ function analyzeText(text, domain = '') {
       grade = 'C';
       classification = 'VAGUE';
       classificationLabel = 'Vague / Unclear (Big Platform Bias)';
+      explanations.push('Large platform default applied.');
     }
+  }
+
+  // Constraint #6: Document vagueness note
+  if (vagueScore > 0) {
+    explanations.push('Note: Vague language often reflects standard legal drafting, not necessarily malicious intent.');
   }
 
   return {
@@ -252,7 +268,7 @@ function analyzeText(text, domain = '') {
     riskLevel: classification === 'SAFE' ? 'LOW' : (classification === 'EXPLICIT_RISK' ? 'HIGH' : 'MEDIUM'),
     classification,
     classificationLabel,
-    explanation: explanations.slice(0, 4).join('. ') + '.',
+    explanation: explanations.slice(0, 5).join('. ') + '.',
     stats: {
       wordCount,
       totalScore,

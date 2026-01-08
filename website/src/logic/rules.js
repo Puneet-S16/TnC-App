@@ -96,18 +96,19 @@ const SCORING_RULES = {
     ]
 };
 
-// Big Platforms that often have vague policies (Bias)
+// Constraint #3: Treat Grade C as default for large platforms
 const BIG_PLATFORMS = ['facebook.com', 'instagram.com', 'google.com', 'youtube.com', 'amazon', 'twitter.com', 'x.com', 'linkedin.com', 'medium.com'];
 
 export function analyzeText(text, domain = '') {
-    if (!text || typeof text !== 'string') {
+    // Constraint #1 checks (basic length check to avoid empty/tiny UI snippets)
+    if (!text || typeof text !== 'string' || text.length < 50) {
         return {
             flags: [],
             grade: 'E',
             riskLevel: 'UNKNOWN',
             classification: 'Unclear',
-            classificationLabel: 'No Text Provided',
-            explanation: 'Please enter text to analyze.'
+            classificationLabel: 'Input too short',
+            explanation: 'Please provide more text for analysis.'
         };
     }
 
@@ -148,7 +149,7 @@ export function analyzeText(text, domain = '') {
         if (rule.regex.test(text)) {
             const matches = text.match(new RegExp(rule.regex, 'gi'));
             if (matches) {
-                // Count vague categories found (once per rule)
+                // Count vague categories found (once per rule to avoid explosion)
                 vagueScore += rule.score;
                 vagueMatches.push({ rule, match: matches[0] });
             }
@@ -157,18 +158,17 @@ export function analyzeText(text, domain = '') {
 
     // 4. Guardrails & Penalties
 
-    // Vague Guardrail
+    // Vague Guardrail: Ignore vague if < 1.5 unless no safety
     const hasExplicitSafety = safetyScore < 0;
+
+    // Constraint #4: Grade A only when explicit safety statements exist.
+    // We handle this in grading, but here we decide if vague score counts.
     if (vagueScore < 1.5 && !hasExplicitSafety) {
-        // If vague score is low AND no safety, usually ignore it, 
-        // BUT we now have the "No Evidence Penalty" below, so we can ignore the vague score 
-        // to avoid double penalizing or to follow the "guardrail".
         if (vagueScore > 0) {
             explanations.push(`(Ignored ${vagueScore} vague points - below threshold)`);
         }
         vagueScore = 0;
     } else {
-        // Apply Vague Score
         vagueMatches.forEach(vm => {
             explanations.push(`Vague signal (+${vm.rule.score}): "${vm.match}"`);
             detectedFlags.push({
@@ -201,12 +201,10 @@ export function analyzeText(text, domain = '') {
 
     // 5. Big Platform Bias
     let isBigPlatform = false;
-    // Basic domain check
     if (domain) {
         const lowerDomain = domain.toLowerCase();
         isBigPlatform = BIG_PLATFORMS.some(p => lowerDomain.includes(p));
         if (isBigPlatform) {
-            // Note logic below will enforce the cap
             explanations.push(`Big Platform Bias: Minimum grade limited due to complex ecosystem.`);
         }
     }
@@ -216,45 +214,61 @@ export function analyzeText(text, domain = '') {
     let classificationLabel = '';
     let grade = '';
 
-    // Thresholds:
-    // Score >= 3 -> Explicit Risk
-    if (totalScore >= 3) {
+    // Count explicit high severity flags
+    const explicitRiskCount = detectedFlags.filter(f => f.severity === 'HIGH').length;
+
+    // Constraint #2: Do not assign worst grade (D/E) unless at least TWO explicit risk signals are present.
+    // (Constraint #5: "Downgrade weak E" is covered by this requirement)
+
+    if (totalScore >= 3 && explicitRiskCount >= 2) {
         classification = 'EXPLICIT_RISK';
         classificationLabel = 'Explicit Risk';
         grade = 'D';
         if (totalScore >= 5) grade = 'E';
     }
-    // Score 1 - 2.9 -> Vague / Unclear
+    // Constraint #3: Treat Grade C (Vague / Unclear) as default for large platforms (or high scores without 2 risks)
     else if (totalScore >= 1) {
         classification = 'VAGUE';
         classificationLabel = 'Vague / Unclear';
         grade = 'C';
+
+        // Explain downgrade if score highlight it
+        if (totalScore >= 3) {
+            explanations.push(`(Note: Score is high (${totalScore}), but grade capped at C because < 2 explicit risks were found)`);
+        }
     }
-    // Score <= 0 -> Grade A ONLY IF explicit safety exists
     else {
-        // Must have safety score < 0 to get A
+        // Score <= 0 (or < 1)
+
+        // Constraint #4: Grade A ONLY IF explicit safety exists
         if (hasExplicitSafety && totalScore <= 0) {
             classification = 'SAFE';
             classificationLabel = 'Explicitly Safe';
             grade = 'A';
         } else {
-            // No safety or positive score (but < 1, e.g. 0.5) fallback
-            // Default Fallback = Vague / Unclear (Grade C)
+            // Default Fallback
             classification = 'VAGUE';
             classificationLabel = 'Vague / Unclear (No explicit safety)';
             grade = 'C';
+            if (totalScore <= 0) {
+                explanations.push(`Fallback to Grade C: Score is low, but no explicit safety guarantees found.`);
+            }
         }
     }
 
-    // Apply Big Platform Bias Check
+    // Apply Big Platform Bias Check (Constraint #3 reinforcement)
     if (isBigPlatform) {
-        // "Cap minimum grade at Vague / Unclear unless explicit risk is detected."
-        // Meaning: Can't be A or B. Must be at least C (already checked D/E above).
         if (grade === 'A' || grade === 'B') {
             grade = 'C';
             classification = 'VAGUE';
             classificationLabel = 'Vague / Unclear (Big Platform Bias)';
+            explanations.push('Large platform default applied.');
         }
+    }
+
+    // Constraint #6: Document vague language note
+    if (vagueScore > 0) {
+        explanations.push('Note: Vague language often reflects standard legal drafting, not necessarily malicious intent.');
     }
 
     return {
@@ -264,7 +278,7 @@ export function analyzeText(text, domain = '') {
         riskLevel: classification === 'SAFE' ? 'LOW' : (classification === 'EXPLICIT_RISK' ? 'HIGH' : 'MEDIUM'),
         classification,
         classificationLabel,
-        explanation: explanations.slice(0, 4).join('. ') + '.',
+        explanation: explanations.slice(0, 5).join('. ') + '.',
         stats: {
             wordCount,
             totalScore,

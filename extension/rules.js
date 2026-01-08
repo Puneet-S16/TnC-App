@@ -1,79 +1,100 @@
 /**
  * rules.js
- * Optimized logic for 3-tier risk classification
+ * Optimized logic with Additive Scoring System
  */
 
-// 1. EXPLICIT RISK FLAGS (Red Flags)
-const EXPLICIT_RISK_FLAGS = [
-  {
-    id: 'data_sale',
-    name: 'Sale of Personal Data',
-    description: 'Document explicitly mentions selling data or sharing for commercial purposes.',
-    severity: 'HIGH',
-    regex: /(sell your data|sell personal data|sell personal information|share.*commercial purposes|share.*business partners|monetize user data)/i
-  },
-  {
-    id: 'third_party_share',
-    name: 'Third-Party Data Sharing',
-    description: 'Explicit sharing with affiliates, partners, or third parties.',
-    severity: 'HIGH',
-    regex: /(share.*third parties|share.*affiliates|share.*partners|data.*third party|provide.*third parties)/i
-  },
-  {
-    id: 'auto_renew',
-    name: 'Auto-Renewal / Recurring',
-    description: 'Service auto-renews without clear consent or ignores cancellation.',
-    severity: 'HIGH',
-    regex: /(auto-renew|automatic renewal|automatically renew|recurring billing|charged automatically|until you cancel|subscription will continue)/i
-  },
-  {
-    id: 'no_refund',
-    name: 'No Refunds',
-    description: 'Strict no-refund policy.',
-    severity: 'HIGH',
-    regex: /(no refunds|non-refundable|all sales are final|cannot be returned|no obligation to refund)/i
-  },
-  {
-    id: 'liability',
-    name: 'Limitation of Liability',
-    description: 'Company waives responsibility for damages.',
-    severity: 'MEDIUM',
-    regex: /(limit.*liability|limitation of liability|not liable|as is|no warranty|maximum liability)/i
-  },
-  {
-    id: 'arbitration',
-    name: 'Mandatory Arbitration',
-    description: 'Waives right to sue or join class actions.',
-    severity: 'HIGH',
-    regex: /(arbitration|class action waiver|waive right to trial|dispute resolution|binding arbitration)/i
-  }
-];
-
-// 2. EXPLICIT SAFETY FLAGS (Green Flags)
-const EXPLICIT_SAFE_FLAGS = [
-  {
-    id: 'no_sell',
-    regex: /(we do not sell|never sell|will not sell|no sale of personal)/i
-  },
-  {
-    id: 'no_share',
-    regex: /(we do not share|never share|will not share|data stays with us|not share.*third parties)/i
-  },
-  {
-    id: 'easy_cancel',
-    regex: /(cancel at any time|easy cancellation|refund within|money-back guarantee)/i
-  }
-];
-
-// 3. VAGUE / EVASIVE LANGUAGE (Yellow Flags)
-const VAGUE_FLAGS = [
-  { regex: /(partners help us|third parties help us)/i },
-  { regex: /(improve our services|enhance user experience)/i },
-  { regex: /(business purposes|commercial purposes)/i },
-  { regex: /(information we collect|may be used)/i },
-  { regex: /(as necessary|reasonable efforts)/i },
-  { regex: /(may share|might share)/i }
-];
+// 1. SCORING RULES
+const SCORING_RULES = {
+  RISK: [
+    {
+      id: 'data_sale',
+      score: 3,
+      name: 'Sale of Personal Data',
+      description: 'Explicitly mentions selling data or sharing for commercial purposes.',
+      regex: /(sell your data|sell personal data|sell personal information|share.*commercial purposes|share.*business partners|monetize user data)/i
+    },
+    {
+      id: 'data_share',
+      score: 3,
+      name: 'Third-Party Data Sharing',
+      description: 'Explicit sharing with third parties.',
+      regex: /(share.*third parties|share.*affiliates|share.*partners|data.*third party|provide.*third parties|disclose.*third parties)/i
+    },
+    {
+      id: 'auto_renew',
+      score: 3,
+      name: 'Auto-Renewal / Recurring',
+      description: 'Auto-renewal without explicit reminder.',
+      regex: /(auto-renew|automatic renewal|automatically renew|recurring billing|charged automatically|until you cancel|subscription will continue)/i
+    },
+    {
+      id: 'no_refund',
+      score: 2,
+      name: 'No Refunds',
+      description: 'Non-refundable or all sales final.',
+      regex: /(no refunds|non-refundable|all sales are final|cannot be returned|no obligation to refund)/i
+    },
+    {
+      id: 'waiver',
+      score: 2,
+      name: 'Liability / Arbitration',
+      description: 'Mandatory arbitration or liability waiver.',
+      regex: /(limit.*liability|limitation of liability|not liable|as is|no warranty|arbitration|class action waiver|waive right to trial|binding arbitration)/i
+    }
+  ],
+  VAGUE: [
+    {
+      id: 'partners',
+      score: 1,
+      name: 'Vague Partner Sharing',
+      regex: /(partners help us|third parties help us)/i
+    },
+    {
+      id: 'commercial',
+      score: 1,
+      name: 'Commercial Purposes',
+      regex: /(business purposes|commercial purposes|marketing purposes)/i
+    },
+    {
+      id: 'improve',
+      score: 0.5,
+      name: 'Improve Services',
+      regex: /(improve our services|enhance user experience|analyze usage)/i
+    },
+    {
+      id: 'collection',
+      score: 0.5,
+      name: 'Data Collection',
+      regex: /(information we collect|data we collect)/i
+    },
+    {
+      id: 'usage',
+      score: 0.5,
+      name: 'Vague Usage',
+      regex: /(may be used|as necessary|reasonable efforts)/i
+    }
+  ],
+  SAFETY: [
+    {
+      id: 'no_sell',
+      score: -3,
+      name: 'No Data Selling',
+      regex: /(we do not sell|never sell|will not sell|no sale of personal)/i
+    },
+    {
+      id: 'control',
+      score: -2,
+      name: 'User Control / Opt-Out',
+      regex: /(opt-out|control your data|withdraw consent|delete your account)/i
+    },
+    {
+      id: 'refund_policy',
+      score: -1,
+      name: 'Refund Policy',
+      regex: /(cancel at any time|refund within|money-back guarantee|full refund)/i
+    }
+  ]
+};
 
 function analyzeText(text) {
   if (!text || typeof text !== 'string') {
@@ -82,95 +103,127 @@ function analyzeText(text) {
       grade: 'E',
       riskLevel: 'UNKNOWN',
       classification: 'Unclear',
-      explanation: 'No text provided.'
+      classificationLabel: 'No Text Provided',
+      explanation: 'Please enter text to analyze.'
     };
   }
 
-  // A. Detect Explicit Risks
-  const detectedRiskFlags = [];
-  EXPLICIT_RISK_FLAGS.forEach(rule => {
+  let totalScore = 0;
+  const detectedFlags = [];
+  let explanations = [];
+
+  // 1. Calculate Risk Score
+  let riskScore = 0;
+  SCORING_RULES.RISK.forEach(rule => {
     if (rule.regex.test(text)) {
-      detectedRiskFlags.push({
+      const match = text.match(rule.regex)[0];
+      riskScore += rule.score;
+      detectedFlags.push({
         ...rule,
-        trigger: text.match(rule.regex)[0] // Transparency: Store exact trigger
+        severity: 'HIGH',
+        trigger: match,
+        displayScore: `+${rule.score}`
       });
+      explanations.push(`Explicit risk (+${rule.score}): "${match}"`);
     }
   });
 
-  // B. Detect Explicit Safety
-  let safetyCount = 0;
-  const safetyTriggers = [];
-  EXPLICIT_SAFE_FLAGS.forEach(rule => {
+  // 2. Calculate Safety Score
+  let safetyScore = 0;
+  SCORING_RULES.SAFETY.forEach(rule => {
     if (rule.regex.test(text)) {
-      safetyCount++;
-      safetyTriggers.push(text.match(rule.regex)[0]);
+      const match = text.match(rule.regex)[0];
+      safetyScore += rule.score; // Score is negative
+      explanations.push(`Safety signal (${rule.score}): "${match}"`);
     }
   });
 
-  // C. Detect Vague Language
-  let vagueCount = 0;
-  const vagueTriggers = [];
-  VAGUE_FLAGS.forEach(rule => {
-    const matches = text.match(new RegExp(rule.regex, 'gi'));
-    if (matches) {
-      vagueCount += matches.length;
-      vagueTriggers.push(matches[0]);
+  // 3. Calculate Vague Score
+  let vagueScore = 0;
+  let vagueMatches = [];
+  SCORING_RULES.VAGUE.forEach(rule => {
+    if (rule.regex.test(text)) {
+      const matches = text.match(new RegExp(rule.regex, 'gi'));
+      if (matches) {
+        matches.forEach(m => {
+          // Unique counts handled by loop structure (once per rule)
+        });
+        vagueScore += rule.score;
+        vagueMatches.push({ rule, match: matches[0] });
+      }
     }
   });
 
-  // D. Complexity Heuristic
+  // 4. Guardrails
+  const hasExplicitSafety = safetyScore < 0;
+
+  if (vagueScore < 1.5 || hasExplicitSafety) {
+    if (vagueScore > 0) {
+      explanations.push(`(Ignored ${vagueScore} vague points due to ${hasExplicitSafety ? 'safety signals' : 'low threshold'})`);
+    }
+    vagueScore = 0;
+  } else {
+    vagueMatches.forEach(vm => {
+      explanations.push(`Vague signal (+${vm.rule.score}): "${vm.match}"`);
+      detectedFlags.push({
+        ...vm.rule,
+        severity: 'MEDIUM',
+        trigger: vm.match,
+        displayScore: `+${vm.rule.score}`
+      });
+    });
+  }
+
+  // Complexity Penalty
   const wordCount = text.split(/\s+/).length;
-  const isComplex = wordCount > 1000;
+  if (wordCount > 2000 && vagueScore >= 1.0 && safetyScore === 0) {
+    totalScore += 1.5;
+    explanations.push(`Complexity Penalty (+1.5): Document is long (${wordCount} words) with vague language and no safety.`);
+  }
 
-  // --- CLASSIFICATION LOGIC ---
+  // 5. Final Calculation
+  totalScore = riskScore + vagueScore + safetyScore;
 
+  // 6. Classification
   let classification = '';
   let classificationLabel = '';
   let grade = '';
-  let explanation = '';
 
-  // 1. Explicit Risk Detected
-  if (detectedRiskFlags.length > 0) {
+  if (totalScore >= 3) {
     classification = 'EXPLICIT_RISK';
-    classificationLabel = 'Explicit Risk – clear red flags detected';
-    grade = detectedRiskFlags.length >= 2 ? 'E' : 'D';
-    explanation = `Explicit risk detected due to: "${detectedRiskFlags[0].name}".`;
-  }
-  // 2. Explicitly Safe (Must have safety + NO vague + NO risk)
-  else if (safetyCount > 0 && vagueCount === 0 && !isComplex) {
-    classification = 'SAFE';
-    classificationLabel = 'Explicitly Safe (based on clear statements)';
-    grade = 'A';
-    explanation = 'Marked safe due to explicit no-sharing statements and lack of vague language.';
-  }
-  // 3. Vague / Unclear (Default)
-  else {
+    classificationLabel = 'Explicit Risk';
+    grade = 'D';
+    if (totalScore >= 5) grade = 'E';
+  } else if (totalScore >= 1) {
     classification = 'VAGUE';
-    classificationLabel = 'Vague / Unclear – risk may exist';
+    classificationLabel = 'Vague / Unclear';
     grade = 'C';
+  } else {
+    classification = 'SAFE';
+    classificationLabel = 'Explicitly Safe';
+    grade = 'A';
 
-    if (vagueCount > 3 || isComplex) {
-      explanation = 'Marked unclear due to vague legal language and complexity.';
-      grade = 'C';
-    } else {
-      explanation = 'Marked unclear due to lack of explicit safety guarantees.';
+    if (totalScore > 0) {
+      classification = 'VAGUE';
+      classificationLabel = 'Unclear / Minor Risks';
       grade = 'B';
     }
   }
 
-  // Map to old structure mostly, but add new fields
   return {
-    flags: detectedRiskFlags,
+    flags: detectedFlags,
     grade: grade,
+    score: totalScore,
     riskLevel: classification === 'SAFE' ? 'LOW' : (classification === 'EXPLICIT_RISK' ? 'HIGH' : 'MEDIUM'),
     classification,
     classificationLabel,
-    explanation,
+    explanation: explanations.slice(0, 3).join('. ') + '.',
     stats: {
       wordCount,
-      vagueCount,
-      safetyCount,
-      riskCount: detectedRiskFlags.length
+      totalScore,
+      riskScore,
+      vagueScore,
+      safetyScore
     }
   };
 }
@@ -179,11 +232,11 @@ function analyzeText(text) {
 if (typeof window !== 'undefined') {
   window.RedFlagLogic = {
     analyzeText,
-    EXPLICIT_RISK_FLAGS
+    SCORING_RULES
   };
 }
 
 // For testing environments (Node.js)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { analyzeText, EXPLICIT_RISK_FLAGS };
+  module.exports = { analyzeText, SCORING_RULES };
 }

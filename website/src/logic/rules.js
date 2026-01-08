@@ -1,6 +1,6 @@
 /**
  * rules.js
- * Optimized logic with Additive Scoring System
+ * Optimized logic with Additive Scoring System & Strict Grading
  */
 
 // 1. SCORING RULES
@@ -77,13 +77,13 @@ const SCORING_RULES = {
     SAFETY: [
         {
             id: 'no_sell',
-            score: -3,
+            score: -2,
             name: 'No Data Selling',
             regex: /(we do not sell|never sell|will not sell|no sale of personal)/i
         },
         {
             id: 'control',
-            score: -2,
+            score: -1,
             name: 'User Control / Opt-Out',
             regex: /(opt-out|control your data|withdraw consent|delete your account)/i
         },
@@ -96,7 +96,10 @@ const SCORING_RULES = {
     ]
 };
 
-export function analyzeText(text) {
+// Big Platforms that often have vague policies (Bias)
+const BIG_PLATFORMS = ['facebook.com', 'instagram.com', 'google.com', 'youtube.com', 'amazon', 'twitter.com', 'x.com', 'linkedin.com', 'medium.com'];
+
+export function analyzeText(text, domain = '') {
     if (!text || typeof text !== 'string') {
         return {
             flags: [],
@@ -134,8 +137,6 @@ export function analyzeText(text) {
         if (rule.regex.test(text)) {
             const match = text.match(rule.regex)[0];
             safetyScore += rule.score; // Score is negative
-            // Safety flags don't usually go in "Detected Flags" (which implies bad stuff), but we use them for calculation.
-            // effectively transparency:
             explanations.push(`Safety signal (${rule.score}): "${match}"`);
         }
     });
@@ -147,33 +148,29 @@ export function analyzeText(text) {
         if (rule.regex.test(text)) {
             const matches = text.match(new RegExp(rule.regex, 'gi'));
             if (matches) {
-                matches.forEach(m => {
-                    // Limit vague matches to avoid infinite score? 
-                    // The user didn't specify a cap, but usually we count presence or frequency.
-                    // "Track frequency of..." in previous prompt. Here "Vague signals -> +1".
-                    // I will count unique rule triggers once per rule to be safe/stable.
-                });
+                // Count vague categories found (once per rule)
                 vagueScore += rule.score;
                 vagueMatches.push({ rule, match: matches[0] });
             }
         }
     });
 
-    // 4. Guardrails
+    // 4. Guardrails & Penalties
 
-    // Vague Guardrail: Ignore vague if < 1.5 OR explicit safety exists
-    const hasExplicitSafety = safetyScore < 0; // Any safety signal found
-
-    if (vagueScore < 1.5 || hasExplicitSafety) {
+    // Vague Guardrail
+    const hasExplicitSafety = safetyScore < 0;
+    if (vagueScore < 1.5 && !hasExplicitSafety) {
+        // If vague score is low AND no safety, usually ignore it, 
+        // BUT we now have the "No Evidence Penalty" below, so we can ignore the vague score 
+        // to avoid double penalizing or to follow the "guardrail".
         if (vagueScore > 0) {
-            explanations.push(`(Ignored ${vagueScore} vague points due to ${hasExplicitSafety ? 'safety signals' : 'low threshold'})`);
+            explanations.push(`(Ignored ${vagueScore} vague points - below threshold)`);
         }
         vagueScore = 0;
     } else {
         // Apply Vague Score
         vagueMatches.forEach(vm => {
             explanations.push(`Vague signal (+${vm.rule.score}): "${vm.match}"`);
-            // Maybe add to output flags?
             detectedFlags.push({
                 ...vm.rule,
                 severity: 'MEDIUM',
@@ -183,52 +180,82 @@ export function analyzeText(text) {
         });
     }
 
-    // Complexity Penalty
+    // Complexity Rules
     const wordCount = text.split(/\s+/).length;
-    if (wordCount > 2000 && vagueScore >= 1.0 && safetyScore === 0) {
-        // Apply penalty? User says "Apply a downgrade...".
-        // Let's add +1.5 to ensure it hits "Vague/Unclear" (threshold 1.0)
-        totalScore += 1.5;
-        explanations.push(`Complexity Penalty (+1.5): Document is long (${wordCount} words) with vague language and no safety.`);
+    let complexityPenalty = 0;
+
+    // "No Evidence of Safety Penalty"
+    // If no explicit safety signals found AND document length > 150 words -> +1
+    if (safetyScore === 0 && wordCount > 150) {
+        complexityPenalty += 1;
+        explanations.push(`Uncertainty Penalty (+1): No safety signals found.`);
     }
 
-    // 5. Final Calculation
-    totalScore = riskScore + vagueScore + safetyScore;
+    // Explicit long-document complexity
+    if (wordCount > 2000 && vagueScore >= 1.0 && safetyScore === 0) {
+        complexityPenalty += 1.5;
+        explanations.push(`Complexity Penalty (+1.5): Document is very long (${wordCount} words) with vague language.`);
+    }
 
-    // 6. Classification
+    totalScore = riskScore + vagueScore + safetyScore + complexityPenalty;
+
+    // 5. Big Platform Bias
+    let isBigPlatform = false;
+    // Basic domain check
+    if (domain) {
+        const lowerDomain = domain.toLowerCase();
+        isBigPlatform = BIG_PLATFORMS.some(p => lowerDomain.includes(p));
+        if (isBigPlatform) {
+            // Note logic below will enforce the cap
+            explanations.push(`Big Platform Bias: Minimum grade limited due to complex ecosystem.`);
+        }
+    }
+
+    // 6. Classification & Grading
     let classification = '';
     let classificationLabel = '';
     let grade = '';
 
+    // Thresholds:
+    // Score >= 3 -> Explicit Risk
     if (totalScore >= 3) {
         classification = 'EXPLICIT_RISK';
         classificationLabel = 'Explicit Risk';
-        grade = 'D'; // D or E
+        grade = 'D';
         if (totalScore >= 5) grade = 'E';
-    } else if (totalScore >= 1) {
+    }
+    // Score 1 - 2.9 -> Vague / Unclear
+    else if (totalScore >= 1) {
         classification = 'VAGUE';
         classificationLabel = 'Vague / Unclear';
         grade = 'C';
-    } else {
-        classification = 'SAFE';
-        classificationLabel = 'Explicitly Safe';
-        grade = 'A';
-        // Sanity check: "Never label 'safe' if score positive"
-        if (totalScore > 0) { // e.g. 0.5 -> Vague?
-            // "Score <= 0 -> Explicitly Safe". "Score between 1 and 2.5 -> Vague".
-            // What about 0.5?
-            // User says "Never label a site 'safe' if the score is positive."
-            // So 0.1 to 0.9 should probably be 'Vague' or 'Low Risk but not Safe'?
-            // Let's map 0.1-0.9 to Vague (grade B?).
+    }
+    // Score <= 0 -> Grade A ONLY IF explicit safety exists
+    else {
+        // Must have safety score < 0 to get A
+        if (hasExplicitSafety && totalScore <= 0) {
+            classification = 'SAFE';
+            classificationLabel = 'Explicitly Safe';
+            grade = 'A';
+        } else {
+            // No safety or positive score (but < 1, e.g. 0.5) fallback
+            // Default Fallback = Vague / Unclear (Grade C)
             classification = 'VAGUE';
-            classificationLabel = 'Unclear / Minor Risks';
-            grade = 'B';
+            classificationLabel = 'Vague / Unclear (No explicit safety)';
+            grade = 'C';
         }
     }
 
-    // Safety Override force (from prompt: "If clearly states No data selling... Enforce Minimum grade = Explicitly Safe")
-    // But then prompt says "Never label safe if score positive".
-    // Math handles it: -3 usually fixes it.
+    // Apply Big Platform Bias Check
+    if (isBigPlatform) {
+        // "Cap minimum grade at Vague / Unclear unless explicit risk is detected."
+        // Meaning: Can't be A or B. Must be at least C (already checked D/E above).
+        if (grade === 'A' || grade === 'B') {
+            grade = 'C';
+            classification = 'VAGUE';
+            classificationLabel = 'Vague / Unclear (Big Platform Bias)';
+        }
+    }
 
     return {
         flags: detectedFlags,
@@ -237,7 +264,7 @@ export function analyzeText(text) {
         riskLevel: classification === 'SAFE' ? 'LOW' : (classification === 'EXPLICIT_RISK' ? 'HIGH' : 'MEDIUM'),
         classification,
         classificationLabel,
-        explanation: explanations.slice(0, 3).join('. ') + '.', // Top 3 reasons
+        explanation: explanations.slice(0, 4).join('. ') + '.',
         stats: {
             wordCount,
             totalScore,

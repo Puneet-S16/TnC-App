@@ -1,6 +1,6 @@
 /**
  * rules.js
- * Optimized logic with Additive Scoring System
+ * Optimized logic with Additive Scoring System & Strict Grading
  */
 
 // 1. SCORING RULES
@@ -77,13 +77,13 @@ const SCORING_RULES = {
   SAFETY: [
     {
       id: 'no_sell',
-      score: -3,
+      score: -2,
       name: 'No Data Selling',
       regex: /(we do not sell|never sell|will not sell|no sale of personal)/i
     },
     {
       id: 'control',
-      score: -2,
+      score: -1,
       name: 'User Control / Opt-Out',
       regex: /(opt-out|control your data|withdraw consent|delete your account)/i
     },
@@ -96,7 +96,10 @@ const SCORING_RULES = {
   ]
 };
 
-function analyzeText(text) {
+// Big Platforms that often have vague policies (Bias)
+const BIG_PLATFORMS = ['facebook.com', 'instagram.com', 'google.com', 'youtube.com', 'amazon', 'twitter.com', 'x.com', 'linkedin.com', 'medium.com'];
+
+function analyzeText(text, domain = '') {
   if (!text || typeof text !== 'string') {
     return {
       flags: [],
@@ -145,24 +148,24 @@ function analyzeText(text) {
     if (rule.regex.test(text)) {
       const matches = text.match(new RegExp(rule.regex, 'gi'));
       if (matches) {
-        matches.forEach(m => {
-          // Unique counts handled by loop structure (once per rule)
-        });
+        // Count vague categories found (once per rule)
         vagueScore += rule.score;
         vagueMatches.push({ rule, match: matches[0] });
       }
     }
   });
 
-  // 4. Guardrails
-  const hasExplicitSafety = safetyScore < 0;
+  // 4. Guardrails & Penalties
 
-  if (vagueScore < 1.5 || hasExplicitSafety) {
+  // Vague Guardrail
+  const hasExplicitSafety = safetyScore < 0;
+  if (vagueScore < 1.5 && !hasExplicitSafety) {
     if (vagueScore > 0) {
-      explanations.push(`(Ignored ${vagueScore} vague points due to ${hasExplicitSafety ? 'safety signals' : 'low threshold'})`);
+      explanations.push(`(Ignored ${vagueScore} vague points - below threshold)`);
     }
     vagueScore = 0;
   } else {
+    // Apply Vague Score
     vagueMatches.forEach(vm => {
       explanations.push(`Vague signal (+${vm.rule.score}): "${vm.match}"`);
       detectedFlags.push({
@@ -174,39 +177,71 @@ function analyzeText(text) {
     });
   }
 
-  // Complexity Penalty
+  // Complexity Rules
   const wordCount = text.split(/\s+/).length;
-  if (wordCount > 2000 && vagueScore >= 1.0 && safetyScore === 0) {
-    totalScore += 1.5;
-    explanations.push(`Complexity Penalty (+1.5): Document is long (${wordCount} words) with vague language and no safety.`);
+  let complexityPenalty = 0;
+
+  // "No Evidence of Safety Penalty"
+  // If no explicit safety signals found AND document length > 150 words -> +1
+  if (safetyScore === 0 && wordCount > 150) {
+    complexityPenalty += 1;
+    explanations.push(`Uncertainty Penalty (+1): No safety signals found.`);
   }
 
-  // 5. Final Calculation
-  totalScore = riskScore + vagueScore + safetyScore;
+  // Explicit long-document complexity
+  if (wordCount > 2000 && vagueScore >= 1.0 && safetyScore === 0) {
+    complexityPenalty += 1.5;
+    explanations.push(`Complexity Penalty (+1.5): Document is very long (${wordCount} words) with vague language.`);
+  }
 
-  // 6. Classification
+  totalScore = riskScore + vagueScore + safetyScore + complexityPenalty;
+
+  // 5. Big Platform Bias
+  let isBigPlatform = false;
+  if (domain) {
+    const lowerDomain = domain.toLowerCase();
+    isBigPlatform = BIG_PLATFORMS.some(p => lowerDomain.includes(p));
+    if (isBigPlatform) {
+      explanations.push(`Big Platform Bias: Minimum grade limited due to complex ecosystem.`);
+    }
+  }
+
+  // 6. Classification & Grading
   let classification = '';
   let classificationLabel = '';
   let grade = '';
 
+  // Thresholds:
   if (totalScore >= 3) {
     classification = 'EXPLICIT_RISK';
     classificationLabel = 'Explicit Risk';
     grade = 'D';
     if (totalScore >= 5) grade = 'E';
-  } else if (totalScore >= 1) {
+  }
+  else if (totalScore >= 1) {
     classification = 'VAGUE';
     classificationLabel = 'Vague / Unclear';
     grade = 'C';
-  } else {
-    classification = 'SAFE';
-    classificationLabel = 'Explicitly Safe';
-    grade = 'A';
-
-    if (totalScore > 0) {
+  }
+  else {
+    // Score <= 0 -> Grade A ONLY IF explicit safety exists
+    if (hasExplicitSafety && totalScore <= 0) {
+      classification = 'SAFE';
+      classificationLabel = 'Explicitly Safe';
+      grade = 'A';
+    } else {
       classification = 'VAGUE';
-      classificationLabel = 'Unclear / Minor Risks';
-      grade = 'B';
+      classificationLabel = 'Vague / Unclear (No explicit safety)';
+      grade = 'C';
+    }
+  }
+
+  // Apply Big Platform Bias Check
+  if (isBigPlatform) {
+    if (grade === 'A' || grade === 'B') {
+      grade = 'C';
+      classification = 'VAGUE';
+      classificationLabel = 'Vague / Unclear (Big Platform Bias)';
     }
   }
 
@@ -217,7 +252,7 @@ function analyzeText(text) {
     riskLevel: classification === 'SAFE' ? 'LOW' : (classification === 'EXPLICIT_RISK' ? 'HIGH' : 'MEDIUM'),
     classification,
     classificationLabel,
-    explanation: explanations.slice(0, 3).join('. ') + '.',
+    explanation: explanations.slice(0, 4).join('. ') + '.',
     stats: {
       wordCount,
       totalScore,

@@ -18,9 +18,9 @@ const gradeDesc = document.getElementById('grade-desc');
 
 analyzeBtn.addEventListener('click', async () => {
     try {
-        const text = await getTabContent();
+        const { text, url } = await getTabContent();
         if (text) {
-            runAnalysis(text);
+            runAnalysis(text, url);
         } else {
             showError("Could not retrieve text from this page.");
         }
@@ -33,7 +33,7 @@ analyzeBtn.addEventListener('click', async () => {
 manualBtn.addEventListener('click', () => {
     const text = manualText.value;
     if (text.trim().length > 0) {
-        runAnalysis(text);
+        runAnalysis(text); // No URL for manual text
     } else {
         alert("Please paste some text first.");
     }
@@ -48,18 +48,20 @@ resetBtn.addEventListener('click', () => {
 async function getTabContent() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (!tab) return null;
+    if (!tab) return { text: null, url: null };
+
+    const url = new URL(tab.url).hostname; // Extract hostname
 
     try {
         const response = await chrome.tabs.sendMessage(tab.id, { action: "getPageText" });
-        return response ? response.text : null;
+        return { text: response ? response.text : null, url };
     } catch (e) {
         try {
             const injectionResults = await chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 func: () => document.body.innerText
             });
-            return injectionResults[0].result;
+            return { text: injectionResults[0].result, url };
         } catch (injectionError) {
             console.error("Injection failed", injectionError);
             throw injectionError;
@@ -67,13 +69,13 @@ async function getTabContent() {
     }
 }
 
-function runAnalysis(text) {
+function runAnalysis(text, domain = '') {
     if (!window.RedFlagLogic) {
         console.error("Rules logic not loaded!");
         return;
     }
 
-    const result = window.RedFlagLogic.analyzeText(text);
+    const result = window.RedFlagLogic.analyzeText(text, domain);
     displayResults(result);
 }
 

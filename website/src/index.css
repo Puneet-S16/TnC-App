@@ -59,7 +59,7 @@ body {
 
 .btn-secondary {
   background-color: white;
-  color: var(--text-main);
+  color: var(--primary);
   border: 1px solid #E5E7EB;
   padding: 12px 24px;
   border-radius: 8px;

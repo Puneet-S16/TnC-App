@@ -89,14 +89,10 @@ function displayResults(result) {
     }
 
     if (gradeDesc) {
-        const descriptions = {
-            'A': 'Good / Safe',
-            'B': 'Fair / Use Caution',
-            'C': 'Use Caution',
-            'D': 'Warning',
-            'E': 'High Risk / Severe Issues'
-        };
-        gradeDesc.textContent = descriptions[result.grade] || 'Unknown';
+        gradeDesc.innerHTML = `
+            <div style="font-size: 1.1em; font-weight: bold;">${result.classificationLabel}</div>
+            <div style="font-size: 0.9em; margin-top: 5px; color: #555;">${result.explanation}</div>
+        `;
     }
 
     // Clear list
@@ -130,6 +126,16 @@ function displayResults(result) {
 
             content.appendChild(title);
             content.appendChild(desc);
+
+            if (flag.trigger) {
+                const triggerEl = document.createElement('div');
+                triggerEl.style.fontSize = '11px';
+                triggerEl.style.color = '#c62828';
+                triggerEl.style.marginTop = '4px';
+                triggerEl.style.fontStyle = 'italic';
+                triggerEl.textContent = `Triggered by: "${flag.trigger}"`;
+                content.appendChild(triggerEl);
+            }
 
             card.appendChild(icon);
             card.appendChild(content);

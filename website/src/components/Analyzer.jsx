@@ -84,12 +84,11 @@ export default function Analyzer({ onBack }) {
                                 </div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '1.2rem', fontWeight: '600' }}>
-                                    {result.grade === 'A' ? 'Good / Safe' :
-                                        result.grade === 'B' ? 'Fair / Use Caution' :
-                                            result.grade === 'C' ? 'Use Caution' :
-                                                result.grade === 'D' ? 'Warning' :
-                                                    'High Risk'}
+                                <div style={{ fontSize: '1.2rem', fontWeight: '600', color: `var(--grade-${result.grade.toLowerCase()})` }}>
+                                    {result.classificationLabel}
+                                </div>
+                                <div style={{ fontSize: '14px', color: '#6B7280', marginTop: '4px' }}>
+                                    {result.explanation}
                                 </div>
                                 <span style={{ color: '#6B7280' }}>
                                     Found {result.flags.length} potential issues
@@ -118,6 +117,11 @@ export default function Analyzer({ onBack }) {
                                     <div>
                                         <div style={{ fontWeight: '600', color: '#111827' }}>{flag.name}</div>
                                         <div style={{ fontSize: '14px', color: '#4B5563', marginTop: '4px' }}>{flag.description}</div>
+                                        {flag.trigger && (
+                                            <div style={{ fontSize: '12px', color: '#DC2626', marginTop: '6px', fontStyle: 'italic' }}>
+                                                Triggered by: "{flag.trigger}"
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}

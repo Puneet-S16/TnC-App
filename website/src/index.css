@@ -58,8 +58,8 @@ body {
 }
 
 .btn-secondary {
-  background-color: white;
-  color: var(--text-main);
+  background-color: var(--primary);
+  color: white;
   border: 1px solid #E5E7EB;
   padding: 12px 24px;
   border-radius: 8px;
